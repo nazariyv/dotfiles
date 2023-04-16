@@ -16,3 +16,9 @@
         dest: "{{ lookup('env','HOME') }}/.tmux.conf"
         state: link
         force: yes
+
+    - name: Run PackerInstall for Neovim
+      command: >
+        nvim --headless -c "source {{ lookup('env','HOME') }}/.config/nvim/lua/shredder/packer.lua" -c "autocmd User PackerComplete quitall" -c "PackerInstall"
+      args:
+        creates: "{{ lookup('env','HOME') }}/.local/share/nvim/site/pack/packer"
