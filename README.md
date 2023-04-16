@@ -17,6 +17,7 @@ ansible-playbook ansible/main.yml --ask-become-pass
 - install nerd font
 - aliases / ssh keys
 - make terminal start in tmux straight up:
+- make setup.sh determine the os, if mac, use brew, if ubuntu apt-get
 
 ```bash
 # Call tmux for every interactive shell. Cause tmux is awesome.
