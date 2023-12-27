@@ -49,3 +49,4 @@ exec_always --no-startup-id nitrogen --restore
 - make setup.sh determine the os, if mac, use brew, if ubuntu apt-get
 - install zsh with powerline
 - turn some of the above notes into config files (for example i3 config)
+- `feh` is easier to use for bg: `exec_always --no-startup-id feh --bg-scale /path/to/your/wallpaper.jpg`
