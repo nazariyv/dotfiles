@@ -33,9 +33,19 @@ This forces applications using GTK 3 to use a dark theme if available.
 
 4. **Compositor**: use `picom` it's `compton` fork.
 
+5. **Ensuring compositor and nitrogen start on i3 session start**: add these two lines:
+
+```
+# start picom compositor
+exec_always --no-startup-id picom &
+# start nitrogen on i3 start
+exec_always --no-startup-id nitrogen --restore
+```
+
 ## TODO
 
 - install nerd font
 - aliases / ssh keys
 - make setup.sh determine the os, if mac, use brew, if ubuntu apt-get
 - install zsh with powerline
+- turn some of the above notes into config files (for example i3 config)
