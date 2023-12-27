@@ -29,7 +29,9 @@ ansible-playbook ansible/main.yml --ask-become-pass
 
 This forces applications using GTK 3 to use a dark theme if available.
 
-3. **Set Desktop Background**: use `nitrogen` for now.
+3. **Set Desktop Background**: use `nitrogen` for now. Default location for Ubuntu wallpapers is `/usr/share/backgrounds`. You will need to add this in nitrogen.
+
+4. **Compositor**: use `picom` it's `compton` fork.
 
 ## TODO
 
