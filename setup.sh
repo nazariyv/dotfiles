@@ -149,14 +149,14 @@ if ! stage_done update_upgrade; then
   echo "### Stage 1: apt update && apt upgrade"
   apt update && apt -y upgrade
   mark_stage update_upgrade
-  [[ "$TEST_MODE" == "true" ]] || { schedule_reboot; exit 0; }
+  # [[ "$TEST_MODE" == "true" ]] || { schedule_reboot; exit 0; }
 fi
 
 # ─────── Stage 2: cron cleanup after reboot ───────────────────────────────────
-if ! stage_done reboot_completed; then
-  echo "### Stage 2: removing reboot-schedule"
-  remove_reboot_schedule
-fi
+# if ! stage_done reboot_completed; then
+#   echo "### Stage 2: removing reboot-schedule"
+#   remove_reboot_schedule
+# fi
 
 # ─────── Stage 3: core tools + Docker ─────────────────────────────────────────
 if ! stage_done install_docker; then
