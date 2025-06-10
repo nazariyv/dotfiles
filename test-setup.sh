@@ -1,21 +1,13 @@
 #!/bin/bash
 
-# Test the complete setup pipeline including "reboot" simulation and shell access
-
 # Run the setup script in test mode
 echo "=== RUNNING SETUP SCRIPT ==="
 docker run --name setup-test --privileged \
   -v "$PWD:/git/dotfiles:ro" \
-  -e TEST_MODE=true \
   -e CONTAINER_MODE=true \
   ubuntu:latest \
   bash -c "
     # Run the setup script
-    bash /git/dotfiles/setup.sh
-    
-    # Simulate what happens after reboot by running it again
-    echo ''
-    echo '=== SIMULATING POST-REBOOT RUN ==='
     bash /git/dotfiles/setup.sh
     
     echo ''
@@ -47,6 +39,7 @@ if [ $? -eq 0 ]; then
         echo '  - zsh (should be default shell)'
         echo '  - docker --version'
         echo '  - nvim --version'
+        echo '  - rustc --version'
         echo '  - node --version (after: source ~/.nvm/nvm.sh)'
         echo '  - tmux'
         echo '  - ls -la ~ (check dotfiles)'

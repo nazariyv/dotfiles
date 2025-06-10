@@ -68,7 +68,6 @@ EOF
   chmod +x /etc/profile.d/nvm.sh
 }
 
-# ─────── Stage 0: essentials ──────────────────────────────────────────────────
 if ! stage_done install_essentials; then
   echo "### Stage 0: installing essential packages"
   apt update
@@ -77,19 +76,17 @@ if ! stage_done install_essentials; then
   mark_stage install_essentials
 fi
 
-# ─────── Stage 1: full upgrade ────────────────────────────────────────────────
 if ! stage_done update_upgrade; then
   echo "### Stage 1: apt update && apt upgrade"
   apt update && apt -y upgrade
   mark_stage update_upgrade
 fi
 
-# ─────── Stage 2: core tools + Docker ─────────────────────────────────────────
 if ! stage_done install_docker; then
-  echo "### Stage 3: installing prerequisites & Docker"
+  echo "### Stage 2: installing prerequisites & Docker"
   apt install -y \
     apt-transport-https ca-certificates curl gnupg lsb-release \
-    git build-essential clang zsh btop fzf tmux snapd libluajit-5.1-dev
+    git build-essential clang zsh btop fzf tmux snapd libluajit-5.1-dev liblua5.1-dev
 
   curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
     | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
@@ -102,9 +99,8 @@ https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/s
   mark_stage install_docker
 fi
 
-# ─────── Stage 3: shell, Node, zoxide, Neovim binary, tmux plugins ────────────
 if ! stage_done configure_shell; then
-  echo "### Stage 4: configuring zsh, nvm/Node, Neovim binary, zoxide, tmux-tpm"
+  echo "### Stage 3: configuring zsh, nvm/Node, Neovim binary, zoxide, tmux-tpm"
   USER_HOME="/home/$SUDO_USER"
 
   # Oh-My-Zsh (non-interactive)
@@ -138,9 +134,8 @@ EOF
   mark_stage configure_shell
 fi
 
-# ─────── Stage 4: Neovim config ───────────────────────────────────────────────
 if ! stage_done configure_neovim; then
-  echo "### Stage 5: setting up Neovim config"
+  echo "### Stage 4: setting up Neovim config"
   USER_HOME="/home/$SUDO_USER"
   run_as_user "mkdir -p '$USER_HOME/.config'"
   if [[ -d "$DOTFILES_PATH/nvim" ]]; then
@@ -153,7 +148,18 @@ if ! stage_done configure_neovim; then
   mark_stage configure_neovim
 fi
 
-# ─────── Stage 5: final tweaks ────────────────────────────────────────────────
+if ! stage_done install_rust; then
+  echo "### Stage 5: installing Rust via rustup"
+  # run rustup install as the target user
+  run_as_user 'curl https://sh.rustup.rs -sSf | sh -s -- -y'
+  # ensure cargo bin is on the PATH for all login shells
+  cat >/etc/profile.d/rust.sh <<'EOF'
+export PATH="$HOME/.cargo/bin:$PATH"
+EOF
+  chmod +x /etc/profile.d/rust.sh
+  mark_stage install_rust
+fi
+
 if ! stage_done final_setup; then
   echo "### Stage 6: final setup"
   chsh -s "$(command -v zsh)" "$SUDO_USER"
