@@ -58,56 +58,60 @@ remove_reboot_schedule() {
 
 # ─────── helpers ───────────────────────────────────────────────────────────────
 install_latest_neovim() {
-  local want_ver="0.10.1"                             # don’t bother if nvim ≥ 0.10
+  # local want_ver="0.10.1"                             # don’t bother if nvim ≥ 0.10
+  #
+  # local arch; arch="$(dpkg --print-architecture)"
+  # if [[ "$arch" != "amd64" ]]; then            # arm64, ppc64el, s390x, …
+  #   echo "→ $arch detected – installing from PPA instead of GitHub binary"
+  #   add-apt-repository -y ppa:neovim-ppa/unstable       # already have software-properties-common
+  #   apt-get update -qq
+  #   apt-get install -y neovim
+  #   return
+  # fi
 
-  local arch; arch="$(dpkg --print-architecture)"
-  if [[ "$arch" != "amd64" ]]; then            # arm64, ppc64el, s390x, …
-    echo "→ $arch detected – installing from PPA instead of GitHub binary"
-    add-apt-repository -y ppa:neovim-ppa/unstable       # already have software-properties-common
-    apt-get update -qq
-    apt-get install -y neovim
-    return
-  fi
+  add-apt-repository -y ppa:neovim-ppa/unstable       # already have software-properties-common
+  apt-get update -qq
+  apt-get install -y neovim
 
-  if command -v nvim &>/dev/null &&
-     dpkg --compare-versions "$(nvim --version | awk 'NR==1{print $2}')" ge "$want_ver"
-  then
-    echo "→ Neovim already recent enough"
-    return
-  fi
-
-  echo "→ fetching the latest Neovim release (GitHub API)"
-  local tmp asset_url
-  tmp="$(mktemp -d)"
-
-  # 1. Discover the correct asset URL
-  asset_url="$(curl -fsSL https://api.github.com/repos/neovim/neovim/releases/latest \
-               | grep -oP '"browser_download_url":\s*"\K[^"]*nvim-linux64\.tar\.gz')"
-
-  # 2. Download with retries & fail-fast
-  if ! curl -Lf --retry 3 --retry-delay 2 -o "$tmp/nvim.tar.gz" "$asset_url"; then
-    echo "⚠️  GitHub download failed – falling back to PPA"
-    add-apt-repository -y ppa:neovim-ppa/unstable     # needs software-properties-common (already installed)
-    apt update
-    apt install -y neovim
-    rm -rf "$tmp"
-    return
-  fi
-
-  # 3. Sanity-check that we really received a gzip file
-  if ! gzip -t "$tmp/nvim.tar.gz" &>/dev/null; then
-    echo "⚠️  Downloaded file is not a valid gzip archive – falling back to PPA"
-    add-apt-repository -y ppa:neovim-ppa/unstable
-    apt update
-    apt install -y neovim
-    rm -rf "$tmp"
-    return
-  fi
-
-  # 4. Extract & install
-  tar -xzf "$tmp/nvim.tar.gz" -C "$tmp"
-  install -m 0755 "$tmp"/nvim-linux64/bin/nvim /usr/local/bin/nvim
-  rm -rf "$tmp"
+  # if command -v nvim &>/dev/null &&
+  #    dpkg --compare-versions "$(nvim --version | awk 'NR==1{print $2}')" ge "$want_ver"
+  # then
+  #   echo "→ Neovim already recent enough"
+  #   return
+  # fi
+  #
+  # echo "→ fetching the latest Neovim release (GitHub API)"
+  # local tmp asset_url
+  # tmp="$(mktemp -d)"
+  #
+  # # 1. Discover the correct asset URL
+  # asset_url="$(curl -fsSL https://api.github.com/repos/neovim/neovim/releases/latest \
+  #              | grep -oP '"browser_download_url":\s*"\K[^"]*nvim-linux64\.tar\.gz')"
+  #
+  # # 2. Download with retries & fail-fast
+  # if ! curl -Lf --retry 3 --retry-delay 2 -o "$tmp/nvim.tar.gz" "$asset_url"; then
+  #   echo "⚠️  GitHub download failed – falling back to PPA"
+  #   add-apt-repository -y ppa:neovim-ppa/unstable     # needs software-properties-common (already installed)
+  #   apt update
+  #   apt install -y neovim
+  #   rm -rf "$tmp"
+  #   return
+  # fi
+  #
+  # # 3. Sanity-check that we really received a gzip file
+  # if ! gzip -t "$tmp/nvim.tar.gz" &>/dev/null; then
+  #   echo "⚠️  Downloaded file is not a valid gzip archive – falling back to PPA"
+  #   add-apt-repository -y ppa:neovim-ppa/unstable
+  #   apt update
+  #   apt install -y neovim
+  #   rm -rf "$tmp"
+  #   return
+  # fi
+  #
+  # # 4. Extract & install
+  # tar -xzf "$tmp/nvim.tar.gz" -C "$tmp"
+  # install -m 0755 "$tmp"/nvim-linux64/bin/nvim /usr/local/bin/nvim
+  # rm -rf "$tmp"
   echo "→ installed $(nvim --version | head -n1)"
 }
 
