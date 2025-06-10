@@ -163,7 +163,7 @@ if ! stage_done install_docker; then
   echo "### Stage 3: installing prerequisites & Docker"
   apt install -y \
     apt-transport-https ca-certificates curl gnupg lsb-release \
-    git build-essential clang zsh btop fzf tmux snapd
+    git build-essential clang zsh btop fzf tmux snapd libluajit-5.1-dev
 
   curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
     | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
@@ -190,11 +190,15 @@ if ! stage_done configure_shell; then
     git clone https://github.com/zsh-users/zsh-syntax-highlighting "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting" || true
   '
 
-  install_nvm_and_node          # NEW
+  install_nvm_and_node
+  cat >/etc/zsh/zprofile <<'EOF'
+export NVM_DIR="$HOME/.nvm"
+[[ -s "$NVM_DIR/nvm.sh" ]] && . "$NVM_DIR/nvm.sh" --silent
+EOF
   apt install -y zoxide
   echo 'eval "$(zoxide init zsh)"' >>"$USER_HOME/.zshrc"
 
-  # Latest Neovim binary (works in container too)  NEW
+  # Latest Neovim binary (works in container too)
   install_latest_neovim
 
   # TPM
