@@ -4,8 +4,18 @@ to test with a docker container, run:
 
 `./test-setup.sh`
 
-on a clean machine, git clone this whole repo (then pull the submodule `git submodule update --init --recursive`) and run `sudo ./setup.sh` normally
+# How To Run On A Clean Prod Machine
 
-it will restart the machine
+1/ clone this repo
 
-if there are no updates to progress (`ls -l /var/tmp/setup_state`), run `sudo ./setup.sh` again (it will pick up from where it left off)
+`git clone --recursive https://github.com/nazariyv/dotfiles.git`
+
+2/ run the setup script
+
+`sudo ./setup.sh`
+
+progress gets written to `/var/tmp/setup_state`, so it's possible to check the progress by running
+
+`ls -l /var/tmp/setup_state`
+
+also note, that it's fine to re-run `sudo ./setup.sh`, it will pick up from where it left off
