@@ -10,6 +10,11 @@ SCRIPT_PATH="$(readlink -f "$0")"
 DOTFILES_PATH="$(dirname "$SCRIPT_PATH")"
 # 4) Enable TEST_MODE=true to skip the actual reboot
 TEST_MODE="${TEST_MODE:-false}"
+# 5) Detect if we're in a container
+CONTAINER_MODE="${CONTAINER_MODE:-false}"
+if [[ -f /.dockerenv ]] && [[ "$CONTAINER_MODE" != "false" ]]; then
+  CONTAINER_MODE=true
+fi
 # ────────────────────────────────────────────────────────────────────────────────
 
 # must be root
@@ -19,16 +24,45 @@ fi
 
 # Ensure we have a valid user to work with
 if [[ -z "${SUDO_USER:-}" ]]; then
-  echo "→ please run with sudo (need \$SUDO_USER)"
-  exit 1
+  if [[ "$CONTAINER_MODE" == "true" ]]; then
+    SUDO_USER="${SUDO_USER:-testuser}"
+    # Create the user if it doesn't exist
+    if ! id "$SUDO_USER" &>/dev/null; then
+      useradd -m -s /bin/bash "$SUDO_USER"
+      echo "→ created test user: $SUDO_USER"
+    fi
+  else
+    echo "→ please run with sudo (need \$SUDO_USER)"
+    exit 1
+  fi
 fi
 
 mkdir -p "$STATE_DIR"
 
 stage_done()   { [[ -f "$STATE_DIR/$1" ]]; }
 mark_stage()   { touch "$STATE_DIR/$1"; }
+
+# Function to ensure cron is installed and running
+ensure_cron() {
+  if ! command -v crontab >/dev/null 2>&1; then
+    echo "→ installing cron"
+    apt update
+    apt install -y cron
+    
+    # Start cron service if not in container mode
+    if [[ "$CONTAINER_MODE" != "true" ]]; then
+      systemctl enable --now cron
+    else
+      # In container, just start the service
+      service cron start || true
+    fi
+  fi
+}
+
 schedule_reboot() {
   echo "→ scheduling resume after reboot via cron"
+  ensure_cron
+  
   ( crontab -l 2>/dev/null || true;
     echo "@reboot sleep 30 && $SCRIPT_PATH"
   ) | crontab -
@@ -43,11 +77,29 @@ schedule_reboot() {
 
 remove_reboot_schedule() {
   echo "→ cleaning up @reboot entry"
-  crontab -l 2>/dev/null \
-    | grep -Fv "$SCRIPT_PATH" \
-    | crontab -
+  if command -v crontab >/dev/null 2>&1; then
+    crontab -l 2>/dev/null \
+      | grep -Fv "$SCRIPT_PATH" \
+      | crontab -
+  fi
   mark_stage "reboot_completed"
 }
+
+# ─────── Stage 0: install essential packages ───────────────────────────────────
+if ! stage_done "install_essentials"; then
+  echo "### Stage 0: installing essential packages"
+  apt update
+  apt install -y cron curl wget gnupg lsb-release
+  
+  # Start cron if not in container mode
+  if [[ "$CONTAINER_MODE" != "true" ]]; then
+    systemctl enable --now cron
+  else
+    service cron start || true
+  fi
+  
+  mark_stage "install_essentials"
+fi
 
 # ─────── Stage 1: apt update & upgrade (needs reboot) ──────────────────────────
 if ! stage_done "update_upgrade"; then
@@ -75,6 +127,7 @@ if ! stage_done "install_docker"; then
   apt install -y \
     apt-transport-https ca-certificates curl gnupg lsb-release \
     git build-essential clang zsh btop fzf tmux snapd
+  
   # Docker CE
   curl -fsSL https://download.docker.com/linux/ubuntu/gpg \
     | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
@@ -83,7 +136,15 @@ if ! stage_done "install_docker"; then
     > /etc/apt/sources.list.d/docker.list
   apt update
   apt install -y docker-ce docker-ce-cli containerd.io
-  systemctl enable --now docker
+  
+  # Handle Docker service in container vs host
+  if [[ "$CONTAINER_MODE" != "true" ]]; then
+    systemctl enable --now docker
+  else
+    # In container, try to start dockerd in background
+    dockerd > /var/log/dockerd.log 2>&1 &
+    sleep 5  # Give dockerd time to start
+  fi
   
   # Add user to docker group
   usermod -aG docker "$SUDO_USER"
@@ -120,8 +181,13 @@ EOSU
   apt install -y zoxide
   echo 'eval "$(zoxide init zsh)"' >> "$USER_HOME/.zshrc"
 
-  # Neovim via snap
-  snap install --classic neovim
+  # Neovim - try snap first, fallback to apt
+  if command -v snap >/dev/null 2>&1 && [[ "$CONTAINER_MODE" != "true" ]]; then
+    snap install --classic neovim
+  else
+    echo "→ snap not available or in container, installing neovim via apt"
+    apt install -y neovim
+  fi
 
   # TPM (Tmux Plugin Manager)
   sudo -u "$SUDO_USER" -H bash <<EOSU
