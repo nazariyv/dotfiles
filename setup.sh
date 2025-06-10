@@ -5,7 +5,6 @@ set -euo pipefail
 STATE_DIR="/var/tmp/setup_state"
 SCRIPT_PATH="$(readlink -f "$0")"
 DOTFILES_PATH="$(dirname "$SCRIPT_PATH")"
-TEST_MODE="${TEST_MODE:-false}"
 CONTAINER_MODE="${CONTAINER_MODE:-false}"
 if [[ -f /.dockerenv ]] && [[ "$CONTAINER_MODE" != "false" ]]; then
   CONTAINER_MODE=true
@@ -36,82 +35,12 @@ ensure_cron() {
   [[ "$CONTAINER_MODE" != "true" ]] && systemctl enable --now cron || service cron start || true
 }
 
-schedule_reboot() {
-  echo "→ scheduling resume after reboot via cron"
-  ensure_cron
-  (crontab -l 2>/dev/null || true; echo "@reboot sleep 30 && $SCRIPT_PATH") | crontab -
-  mark_stage reboot_scheduled
-  echo "→ rebooting now…"
-  [[ "$TEST_MODE" == "true" ]] && echo "→ TEST_MODE: skipping actual reboot" || reboot
-}
-
-remove_reboot_schedule() {
-  echo "→ cleaning up @reboot entry"
-  if command -v crontab &>/dev/null; then
-    tmp=$(mktemp)
-    crontab -l 2>/dev/null | grep -Fv "$SCRIPT_PATH" >"$tmp" || true
-    crontab "$tmp" 2>/dev/null || true
-    rm -f "$tmp"
-  fi
-  mark_stage reboot_completed
-}
-
 # ─────── helpers ───────────────────────────────────────────────────────────────
 install_latest_neovim() {
-  # local want_ver="0.10.1"                             # don’t bother if nvim ≥ 0.10
-  #
-  # local arch; arch="$(dpkg --print-architecture)"
-  # if [[ "$arch" != "amd64" ]]; then            # arm64, ppc64el, s390x, …
-  #   echo "→ $arch detected – installing from PPA instead of GitHub binary"
-  #   add-apt-repository -y ppa:neovim-ppa/unstable       # already have software-properties-common
-  #   apt-get update -qq
-  #   apt-get install -y neovim
-  #   return
-  # fi
-
   add-apt-repository -y ppa:neovim-ppa/unstable       # already have software-properties-common
   apt-get update -qq
   apt-get install -y neovim
 
-  # if command -v nvim &>/dev/null &&
-  #    dpkg --compare-versions "$(nvim --version | awk 'NR==1{print $2}')" ge "$want_ver"
-  # then
-  #   echo "→ Neovim already recent enough"
-  #   return
-  # fi
-  #
-  # echo "→ fetching the latest Neovim release (GitHub API)"
-  # local tmp asset_url
-  # tmp="$(mktemp -d)"
-  #
-  # # 1. Discover the correct asset URL
-  # asset_url="$(curl -fsSL https://api.github.com/repos/neovim/neovim/releases/latest \
-  #              | grep -oP '"browser_download_url":\s*"\K[^"]*nvim-linux64\.tar\.gz')"
-  #
-  # # 2. Download with retries & fail-fast
-  # if ! curl -Lf --retry 3 --retry-delay 2 -o "$tmp/nvim.tar.gz" "$asset_url"; then
-  #   echo "⚠️  GitHub download failed – falling back to PPA"
-  #   add-apt-repository -y ppa:neovim-ppa/unstable     # needs software-properties-common (already installed)
-  #   apt update
-  #   apt install -y neovim
-  #   rm -rf "$tmp"
-  #   return
-  # fi
-  #
-  # # 3. Sanity-check that we really received a gzip file
-  # if ! gzip -t "$tmp/nvim.tar.gz" &>/dev/null; then
-  #   echo "⚠️  Downloaded file is not a valid gzip archive – falling back to PPA"
-  #   add-apt-repository -y ppa:neovim-ppa/unstable
-  #   apt update
-  #   apt install -y neovim
-  #   rm -rf "$tmp"
-  #   return
-  # fi
-  #
-  # # 4. Extract & install
-  # tar -xzf "$tmp/nvim.tar.gz" -C "$tmp"
-  # install -m 0755 "$tmp"/nvim-linux64/bin/nvim /usr/local/bin/nvim
-  # rm -rf "$tmp"
   echo "→ installed $(nvim --version | head -n1)"
 }
 
@@ -153,16 +82,9 @@ if ! stage_done update_upgrade; then
   echo "### Stage 1: apt update && apt upgrade"
   apt update && apt -y upgrade
   mark_stage update_upgrade
-  # [[ "$TEST_MODE" == "true" ]] || { schedule_reboot; exit 0; }
 fi
 
-# ─────── Stage 2: cron cleanup after reboot ───────────────────────────────────
-# if ! stage_done reboot_completed; then
-#   echo "### Stage 2: removing reboot-schedule"
-#   remove_reboot_schedule
-# fi
-
-# ─────── Stage 3: core tools + Docker ─────────────────────────────────────────
+# ─────── Stage 2: core tools + Docker ─────────────────────────────────────────
 if ! stage_done install_docker; then
   echo "### Stage 3: installing prerequisites & Docker"
   apt install -y \
@@ -180,7 +102,7 @@ https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > /etc/apt/s
   mark_stage install_docker
 fi
 
-# ─────── Stage 4: shell, Node, zoxide, Neovim binary, tmux plugins ────────────
+# ─────── Stage 3: shell, Node, zoxide, Neovim binary, tmux plugins ────────────
 if ! stage_done configure_shell; then
   echo "### Stage 4: configuring zsh, nvm/Node, Neovim binary, zoxide, tmux-tpm"
   USER_HOME="/home/$SUDO_USER"
@@ -216,7 +138,7 @@ EOF
   mark_stage configure_shell
 fi
 
-# ─────── Stage 5: Neovim config ───────────────────────────────────────────────
+# ─────── Stage 4: Neovim config ───────────────────────────────────────────────
 if ! stage_done configure_neovim; then
   echo "### Stage 5: setting up Neovim config"
   USER_HOME="/home/$SUDO_USER"
@@ -231,7 +153,7 @@ if ! stage_done configure_neovim; then
   mark_stage configure_neovim
 fi
 
-# ─────── Stage 6: final tweaks ────────────────────────────────────────────────
+# ─────── Stage 5: final tweaks ────────────────────────────────────────────────
 if ! stage_done final_setup; then
   echo "### Stage 6: final setup"
   chsh -s "$(command -v zsh)" "$SUDO_USER"
