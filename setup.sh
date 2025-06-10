@@ -42,6 +42,16 @@ mkdir -p "$STATE_DIR"
 stage_done()   { [[ -f "$STATE_DIR/$1" ]]; }
 mark_stage()   { touch "$STATE_DIR/$1"; }
 
+# Helper function to run commands as the target user
+run_as_user() {
+  if command -v sudo >/dev/null 2>&1; then
+    sudo -u "$SUDO_USER" -H bash -c "$1"
+  else
+    # Fallback for environments without sudo
+    su - "$SUDO_USER" -c "$1"
+  fi
+}
+
 # Function to ensure cron is installed and running
 ensure_cron() {
   if ! command -v crontab >/dev/null 2>&1; then
@@ -78,9 +88,11 @@ schedule_reboot() {
 remove_reboot_schedule() {
   echo "→ cleaning up @reboot entry"
   if command -v crontab >/dev/null 2>&1; then
-    crontab -l 2>/dev/null \
-      | grep -Fv "$SCRIPT_PATH" \
-      | crontab -
+    # Get current crontab, remove our entry, and reinstall
+    TEMP_CRON=$(mktemp)
+    crontab -l 2>/dev/null | grep -Fv "$SCRIPT_PATH" > "$TEMP_CRON" || true
+    crontab "$TEMP_CRON" 2>/dev/null || true
+    rm -f "$TEMP_CRON"
   fi
   mark_stage "reboot_completed"
 }
@@ -89,7 +101,7 @@ remove_reboot_schedule() {
 if ! stage_done "install_essentials"; then
   echo "### Stage 0: installing essential packages"
   apt update
-  apt install -y cron curl wget gnupg lsb-release
+  apt install -y cron curl wget gnupg lsb-release sudo
   
   # Start cron if not in container mode
   if [[ "$CONTAINER_MODE" != "true" ]]; then
@@ -109,8 +121,11 @@ if ! stage_done "update_upgrade"; then
 
   if [[ "$TEST_MODE" == "true" ]]; then
     echo "→ TEST_MODE: skipping reboot"
+    # In test mode, we continue immediately - no actual reboot needed
   else
     schedule_reboot
+    # This will reboot and the script will restart, so we exit here
+    exit 0
   fi
 fi
 
@@ -159,23 +174,23 @@ if ! stage_done "configure_shell"; then
   USER_HOME="/home/$SUDO_USER"
 
   # Oh My Zsh (non-interactive) for the user
-  sudo -u "$SUDO_USER" -H bash <<EOSU
+  run_as_user '
     export RUNZSH=no CHSH=no
-    sh -c "\$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+    sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
     
     # Install zsh plugins
-    ZSH_CUSTOM="\${ZSH_CUSTOM:-\$HOME/.oh-my-zsh/custom}"
-    git clone https://github.com/zsh-users/zsh-autosuggestions "\$ZSH_CUSTOM/plugins/zsh-autosuggestions"
-    git clone https://github.com/zsh-users/zsh-syntax-highlighting "\$ZSH_CUSTOM/plugins/zsh-syntax-highlighting"
-EOSU
+    ZSH_CUSTOM="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
+    git clone https://github.com/zsh-users/zsh-autosuggestions "$ZSH_CUSTOM/plugins/zsh-autosuggestions"
+    git clone https://github.com/zsh-users/zsh-syntax-highlighting "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting"
+  '
 
   # NVM & latest LTS Node
-  sudo -u "$SUDO_USER" -H bash <<EOSU
+  run_as_user '
     git clone https://github.com/nvm-sh/nvm.git ~/.nvm
     cd ~/.nvm && git checkout v0.39.5
     . ~/.nvm/nvm.sh
     nvm install --lts
-EOSU
+  '
 
   # zoxide (modern 'z')
   apt install -y zoxide
@@ -190,25 +205,23 @@ EOSU
   fi
 
   # TPM (Tmux Plugin Manager)
-  sudo -u "$SUDO_USER" -H bash <<EOSU
-    git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm
-EOSU
+  run_as_user 'git clone https://github.com/tmux-plugins/tpm ~/.tmux/plugins/tpm'
 
   # Link dotfiles from the repo
   if [[ -f "$DOTFILES_PATH/.tmux.conf" ]]; then
-    sudo -u "$SUDO_USER" ln -sf "$DOTFILES_PATH/.tmux.conf" "$USER_HOME/.tmux.conf"
+    run_as_user "ln -sf '$DOTFILES_PATH/.tmux.conf' '$USER_HOME/.tmux.conf'"
     echo "→ linked .tmux.conf"
   fi
   
   if [[ -f "$DOTFILES_PATH/.zshrc" ]]; then
-    sudo -u "$SUDO_USER" ln -sf "$DOTFILES_PATH/.zshrc" "$USER_HOME/.zshrc"
+    run_as_user "ln -sf '$DOTFILES_PATH/.zshrc' '$USER_HOME/.zshrc'"
     echo "→ linked .zshrc"
   fi
 
   # Link other dotfiles if they exist
   for dotfile in .vimrc .gitconfig .bashrc; do
     if [[ -f "$DOTFILES_PATH/$dotfile" ]]; then
-      sudo -u "$SUDO_USER" ln -sf "$DOTFILES_PATH/$dotfile" "$USER_HOME/$dotfile"
+      run_as_user "ln -sf '$DOTFILES_PATH/$dotfile' '$USER_HOME/$dotfile'"
       echo "→ linked $dotfile"
     fi
   done
@@ -223,18 +236,18 @@ if ! stage_done "configure_neovim"; then
   USER_HOME="/home/$SUDO_USER"
   
   # Create nvim config directory and link/copy config
-  sudo -u "$SUDO_USER" mkdir -p "$USER_HOME/.config"
+  run_as_user "mkdir -p '$USER_HOME/.config'"
   
   if [[ -d "$DOTFILES_PATH/nvim" ]]; then
     # If there's an nvim directory in the repo, link it
-    sudo -u "$SUDO_USER" ln -sf "$DOTFILES_PATH/nvim" "$USER_HOME/.config/nvim"
+    run_as_user "ln -sf '$DOTFILES_PATH/nvim' '$USER_HOME/.config/nvim'"
     echo "→ linked nvim config directory"
   elif [[ -f "$DOTFILES_PATH/init.vim" ]] || [[ -f "$DOTFILES_PATH/init.lua" ]]; then
     # If there are nvim config files in the root, create nvim dir and link them
-    sudo -u "$SUDO_USER" mkdir -p "$USER_HOME/.config/nvim"
+    run_as_user "mkdir -p '$USER_HOME/.config/nvim'"
     for nvim_file in init.vim init.lua; do
       if [[ -f "$DOTFILES_PATH/$nvim_file" ]]; then
-        sudo -u "$SUDO_USER" ln -sf "$DOTFILES_PATH/$nvim_file" "$USER_HOME/.config/nvim/$nvim_file"
+        run_as_user "ln -sf '$DOTFILES_PATH/$nvim_file' '$USER_HOME/.config/nvim/$nvim_file'"
         echo "→ linked $nvim_file"
       fi
     done
